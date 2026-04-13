@@ -1,0 +1,2 @@
+# Preserve CRLF line endings in test fixtures that test CRLF handling.
+internal/update/testdata/crlf.Dockerfile binary

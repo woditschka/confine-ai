@@ -1,0 +1,65 @@
+# Build outputs
+bin/
+
+# Scratch directory for agent collaboration
+.scratch/
+
+# IDE
+.idea/
+.vscode/
+.opencode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+go.work
+go.work.sum
+
+# Claude Code machine-local settings
+.claude/settings.local.json
+
+# Environment
+.env
+.env.*
+*.env
+*.bak
+
+# Private keys and certificates
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+
+# SSH keys
+id_rsa
+id_ed25519
+id_ecdsa
+
+# Keystores
+*.keystore
+*.truststore
+
+# Credentials
+*credentials*
+*secret*
+*.local.json
+*.local.yaml
+*.local.toml
+
+# Package registry auth
+.npmrc
+.pypirc
+.netrc
+.docker/config.json
