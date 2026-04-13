@@ -1,0 +1,16 @@
+// OpenCode devcontainer — requires localhost/confine-ai-base:latest
+// Build base first: docker build -t localhost/confine-ai-base:latest samples/base/
+//
+// OpenCode uses API keys (no interactive login).
+// Store keys in ~/.confine-ai/opencode/config.json on the host,
+// or pass them as environment variables.
+{
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "workspaceFolder": "/workspace",
+  "mounts": [
+    "type=bind,source=${localEnv:HOME}/.confine-ai/opencode,target=/home/dev/.config/opencode"
+  ],
+  "remoteUser": "dev"
+}

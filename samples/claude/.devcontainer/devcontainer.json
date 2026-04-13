@@ -1,0 +1,15 @@
+// Claude Code devcontainer — requires localhost/confine-ai-base:latest
+// Build base first: docker build -t localhost/confine-ai-base:latest samples/base/
+//
+// First run: execute "claude login" inside the container.
+// Credentials persist in the mapped host folder.
+{
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "workspaceFolder": "/workspace",
+  "mounts": [
+    "type=bind,source=${localEnv:HOME}/.confine-ai/claude,target=/home/dev/.claude"
+  ],
+  "remoteUser": "dev"
+}

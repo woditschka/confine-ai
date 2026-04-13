@@ -1,0 +1,16 @@
+// GitHub Copilot CLI devcontainer — requires localhost/confine-ai-base:latest
+// Build base first: docker build -t localhost/confine-ai-base:latest samples/base/
+//
+// First run: execute "copilot login" inside the container.
+// Credentials persist in the mapped host folder (plaintext fallback,
+// since containers lack a system keychain).
+{
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "workspaceFolder": "/workspace",
+  "mounts": [
+    "type=bind,source=${localEnv:HOME}/.confine-ai/github-copilot,target=/home/dev/.copilot"
+  ],
+  "remoteUser": "dev"
+}
