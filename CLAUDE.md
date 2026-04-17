@@ -106,15 +106,7 @@ All documentation, comments, and PRDs must follow the writing standards in [`doc
 
 ## Testing Strategy
 
-Follow [Google Go Testing Best Practices](https://google.github.io/styleguide/go/best-practices#test-structure).
-
-- **Table-driven tests**: Use explicit field names and `t.Run()` for subtests
-- **Useful failure messages**: `t.Errorf("Func(%v) = %v, want %v", input, got, want)`
-- **Struct comparison**: Use `github.com/google/go-cmp/cmp` for diff output
-- **Test helpers**: Mark with `t.Helper()`, use `t.Cleanup()` for teardown
-- **No assertion libraries**: Use standard comparisons, not testify/assert
-- **Mocking policy**: Real implementations > stubs > mocks; mock only at system boundaries
-- **Coverage target**: 80% line coverage for `internal/` packages
+Follow [Google Go Testing Best Practices](https://google.github.io/styleguide/go/best-practices#test-structure). Detailed checklist (table-driven tests, failure messages, helpers, mocking policy, coverage targets) lives in the [`test-review`](.claude/skills/test-review/SKILL.md) skill.
 
 ## Scratch Directory
 

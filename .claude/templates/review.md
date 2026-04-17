@@ -1,7 +1,7 @@
 # [Review Type] Review
 
 **Feature:** REQ-XX-NNN
-**Status:** APPROVED | CHANGES_REQUESTED | BLOCKED
+**Status:** APPROVED | NEEDS_CHANGES | BLOCKED
 
 ## Issues
 

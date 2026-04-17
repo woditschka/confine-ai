@@ -4,10 +4,10 @@
 
 | Reviewer | Status |
 |----------|--------|
-| code-quality | APPROVED / CHANGES_REQUESTED |
-| test-coverage | APPROVED / CHANGES_REQUESTED |
-| security | APPROVED / CHANGES_REQUESTED |
-| doc-review | APPROVED / CHANGES_REQUESTED |
+| code-quality | APPROVED / NEEDS_CHANGES |
+| test-coverage | APPROVED / NEEDS_CHANGES |
+| security | APPROVED / NEEDS_CHANGES |
+| doc-review | APPROVED / NEEDS_CHANGES |
 
 ## Fixed Items
 

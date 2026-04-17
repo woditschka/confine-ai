@@ -1,8 +1,6 @@
 ---
 name: pipeline-coordinator
-description: >-
-  Orchestrates the feature delivery pipeline. Use for new features
-  or when unsure which agent to invoke.
+description: Orchestrates the feature delivery pipeline. Use for new features or when unsure which agent to invoke.
 tools:
   - Read
   - Grep

@@ -39,9 +39,6 @@ Before approving a feature for implementation:
 - [ ] New dependencies from approved sources (see `docs/system-design.md`); ADR required for exceptions
 
 ### DDD Alignment
-
-See `docs/ddd-principles.md` (monorepo root) for full principles.
-
 - [ ] Value objects are immutable with no framework dependencies
 - [ ] Aggregates enforce their own invariants
 - [ ] Data mappers are stateless and pure at all boundaries
