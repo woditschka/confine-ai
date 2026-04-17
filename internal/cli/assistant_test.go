@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -195,10 +196,10 @@ func TestRunAssistantWithExecutor(t *testing.T) {
 		homeDir, wsDir := seedAssistantHome(t, "claude")
 		exec := &cliFakeExecutor{
 			outputResults: []cliOutputResult{
-				{output: "", err: errors.New("image not found")}, // image inspect fails
+				{output: "", err: errors.New("image not found")}, // base image inspect fails
 			},
 			runResults: []error{
-				errors.New("build failed"), // build fails
+				errors.New("build failed"), // base build fails
 			},
 		}
 
@@ -218,11 +219,107 @@ func TestRunAssistantWithExecutor(t *testing.T) {
 		}
 	})
 
-	t.Run("config load and up with no existing container", func(t *testing.T) {
+	t.Run("assistant image ensure failure returns error", func(t *testing.T) {
+		// REQ-AS-002 AC 16: shortcut auto-ensures the assistant image from the
+		// assistant's Dockerfile when the canonical tag is absent.
 		homeDir, wsDir := seedAssistantHome(t, "claude")
 		exec := &cliFakeExecutor{
 			outputResults: []cliOutputResult{
+				{output: "sha256:abc\n"},                           // EnsureBaseImage: base image present
+				{output: "", err: errors.New("no such image: qq")}, // EnsureAssistantImage: assistant image absent
+			},
+			runResults: []error{
+				errors.New("build failed"), // assistant build fails
+			},
+		}
+
+		var stdout, stderr bytes.Buffer
+		err := runAssistantWithExecutor(t.Context(), exec, runtime.Runtime{Name: "docker"}, &stdout, &stderr, assistantParams{
+			assistantName:   "claude",
+			workspaceFolder: wsDir,
+			homeDir:         homeDir,
+			baseDockerfile:  []byte("FROM ubuntu:24.04\n"),
+			noGitIdentity:   true,
+		}, "", "")
+
+		if err == nil {
+			t.Fatal("runAssistantWithExecutor() = nil, want error for assistant image failure")
+		}
+		if !strings.Contains(err.Error(), "assistant image") {
+			t.Errorf("runAssistantWithExecutor() error = %q, want containing %q", err.Error(), "assistant image")
+		}
+
+		// Breadcrumb must have been emitted (REQ-AS-002 AC 17).
+		if !strings.Contains(stderr.String(), "Assistant image") {
+			t.Errorf("stderr = %q, want containing %q", stderr.String(), "Assistant image")
+		}
+		if !strings.Contains(stderr.String(), "confine-ai-assistant-claude:latest") {
+			t.Errorf("stderr = %q, want containing canonical assistant tag", stderr.String())
+		}
+	})
+
+	t.Run("assistant image auto-ensure uses cached build", func(t *testing.T) {
+		// REQ-AS-002 AC 18: the shortcut's auto-ensure is a cached build —
+		// it must not pass --no-cache. Cache-busting is exclusively update's job.
+		// We verify by observing the exact `build` args issued on the shortcut
+		// path when the assistant image is absent.
+		homeDir, wsDir := seedAssistantHome(t, "claude")
+		exec := &cliFakeExecutor{
+			outputResults: []cliOutputResult{
+				{output: "sha256:abc\n"},                           // EnsureBaseImage: base present
+				{output: "", err: errors.New("no such image: qq")}, // EnsureAssistantImage: absent
+			},
+			runResults: []error{
+				nil, // assistant build succeeds
+				// Any further Run (e.g. firewall) returns an error from the
+				// cliFakeExecutor; we do not care — we only inspect the first
+				// Run call, which must be the assistant build.
+			},
+		}
+
+		var stdout, stderr bytes.Buffer
+		// Discard the return error intentionally: this subtest asserts on the
+		// executor's recorded build args, not on the function's exit status.
+		// The fake exhausts after the assistant build, so container.Up will
+		// fail downstream — that failure is outside this subtest's scope.
+		_ = runAssistantWithExecutor(t.Context(), exec, runtime.Runtime{Name: "docker"}, &stdout, &stderr, assistantParams{
+			assistantName:   "claude",
+			workspaceFolder: wsDir,
+			homeDir:         homeDir,
+			baseDockerfile:  []byte("FROM ubuntu:24.04\n"),
+			noGitIdentity:   true,
+		}, "", "")
+
+		// First Run must be the cached assistant build against the canonical tag.
+		if len(exec.runCalls) == 0 {
+			t.Fatal("executor Run calls = 0, want assistant build invocation")
+		}
+		buildArgs := exec.runCalls[0]
+		if !slices.Contains(buildArgs, "build") {
+			t.Fatalf("first Run args = %v, want a build subcommand", buildArgs)
+		}
+		if !slices.Contains(buildArgs, "-t") || !slices.Contains(buildArgs, "confine-ai-assistant-claude:latest") {
+			t.Errorf("first Run args = %v, want containing -t confine-ai-assistant-claude:latest", buildArgs)
+		}
+		if slices.Contains(buildArgs, "--no-cache") {
+			t.Errorf("first Run args = %v, must not contain --no-cache on shortcut auto-ensure path", buildArgs)
+		}
+	})
+
+	t.Run("config load and up with no existing container", func(t *testing.T) {
+		homeDir, wsDir := seedAssistantHome(t, "claude")
+		// The claude devcontainer.json declares bind mounts whose sources are
+		// expanded from ${localEnv:HOME}. LoadFromWorkspace reads HOME through
+		// os.LookupEnv, so without this override the mount source would resolve
+		// to the real user's home (e.g. /home/dev/.confine-ai/data/claude) and
+		// container.Up would fail mount validation before reaching createContainer.
+		// Pinning HOME to the seeded temp homeDir lets the mount sources
+		// (created by assistant.Init) resolve cleanly.
+		t.Setenv("HOME", homeDir)
+		exec := &cliFakeExecutor{
+			outputResults: []cliOutputResult{
 				{output: "sha256:abc\n"},      // EnsureBaseImage: image inspect succeeds
+				{output: "sha256:def\n"},      // EnsureAssistantImage: image inspect succeeds
 				{output: ""},                  // FindByAssistant: no containers
 				{output: ""},                  // FindByLabels (inside Up): no containers
 				{output: "newcontainer123\n"}, // createContainer: returns ID
@@ -250,21 +347,63 @@ func TestRunAssistantWithExecutor(t *testing.T) {
 		if !strings.Contains(stderr.String(), "Loading assistant configuration") {
 			t.Errorf("runAssistantWithExecutor() stderr = %q, want containing %q", stderr.String(), "Loading assistant configuration")
 		}
+
+		// REQ-AS-002 ACs 13-15: the shortcut is a consumer — it must never
+		// issue a `build` subcommand when both images are present. Scan every
+		// Run call to confirm.
+		for _, args := range exec.runCalls {
+			if len(args) > 0 && args[0] == "build" {
+				t.Errorf("executor received build call %v, want no build on shortcut path when images present", args)
+			}
+		}
+
+		// The ordering of Output calls must be: base inspect, assistant inspect,
+		// then the ps query from FindByAssistant.
+		if len(exec.outputCalls) < 3 {
+			t.Fatalf("Output calls = %d, want >= 3 (base inspect, assistant inspect, ps)", len(exec.outputCalls))
+		}
+		if !slices.Contains(exec.outputCalls[0], "inspect") || !slices.Contains(exec.outputCalls[0], "localhost/confine-ai-base:latest") {
+			t.Errorf("first Output call = %v, want base image inspect", exec.outputCalls[0])
+		}
+		if !slices.Contains(exec.outputCalls[1], "inspect") || !slices.Contains(exec.outputCalls[1], "confine-ai-assistant-claude:latest") {
+			t.Errorf("second Output call = %v, want assistant image inspect", exec.outputCalls[1])
+		}
+
+		// REQ-AS-002 AC 12: the container is created from the canonical
+		// assistant tag. createContainer issues `run -d ... <image> sleep
+		// infinity` via Output; scan for the `run` call and verify the image
+		// positional carries the canonical tag.
+		foundRun := false
+		for _, args := range exec.outputCalls {
+			if len(args) > 0 && args[0] == "run" {
+				foundRun = true
+				if !slices.Contains(args, "confine-ai-assistant-claude:latest") {
+					t.Errorf("run args = %v, want containing canonical tag %q", args, "confine-ai-assistant-claude:latest")
+				}
+			}
+		}
+		if !foundRun {
+			t.Error("no run call observed, want container created from canonical tag")
+		}
 	})
 
 	t.Run("existing container with matching hash reconnects", func(t *testing.T) {
 		homeDir, wsDir := seedAssistantHome(t, "claude")
 
 		// We need the config hash that runAssistantWithExecutor will compute.
-		// Load the config the same way the function does to get the right hash.
+		// Load the config the same way the function does to get the right hash,
+		// applying the same Image/Build overrides the shortcut now sets.
 		cfgPath := assistant.ConfigPath(homeDir, "claude")
 		cfg, _, _ := config.LoadFromWorkspace(wsDir, cfgPath, &bytes.Buffer{}, os.LookupEnv)
 		cfg.WorkspaceFolder = "/workspace/" + filepath.Base(wsDir)
+		cfg.Image = assistant.AssistantImageTag("claude")
+		cfg.Build = nil
 		currentHash := container.ConfigHashWithFolders(cfg, nil)
 
 		exec := &cliFakeExecutor{
 			outputResults: []cliOutputResult{
 				{output: "sha256:abc\n"},                                     // EnsureBaseImage: image inspect succeeds
+				{output: "sha256:def\n"},                                     // EnsureAssistantImage: image inspect succeeds
 				{output: "aabb0011\n"},                                       // FindByAssistant: one container
 				{output: currentHash + "\n"},                                 // InspectConfigHash: matching hash
 				{output: `[{"IPAM":{"Config":[{"Gateway":"172.17.0.1"}]}}]`}, // gatewayIP
@@ -297,6 +436,7 @@ func TestRunAssistantWithExecutor(t *testing.T) {
 		exec := &cliFakeExecutor{
 			outputResults: []cliOutputResult{
 				{output: "sha256:abc\n"}, // EnsureBaseImage: image inspect succeeds
+				{output: "sha256:def\n"}, // EnsureAssistantImage: image inspect succeeds
 				{output: ""},             // FindByAssistant: no containers
 				{output: ""},             // FindByLabels (inside Up): no containers
 			},
@@ -324,6 +464,7 @@ func TestRunAssistantWithExecutor(t *testing.T) {
 		exec := &cliFakeExecutor{
 			outputResults: []cliOutputResult{
 				{output: "sha256:abc\n"},      // EnsureBaseImage: image inspect succeeds
+				{output: "sha256:def\n"},      // EnsureAssistantImage: image inspect succeeds
 				{output: ""},                  // FindByAssistant: no containers
 				{output: ""},                  // FindByLabels (inside Up): no containers
 				{output: "newcontainer123\n"}, // createContainer
@@ -355,6 +496,7 @@ func TestRunAssistantWithExecutor(t *testing.T) {
 		exec := &cliFakeExecutor{
 			outputResults: []cliOutputResult{
 				{output: "sha256:abc\n"}, // EnsureBaseImage: image inspect succeeds
+				{output: "sha256:def\n"}, // EnsureAssistantImage: image inspect succeeds
 				{output: ""},             // FindByAssistant: no containers
 			},
 		}
@@ -383,6 +525,7 @@ func TestRunAssistantWithExecutor(t *testing.T) {
 		exec := &cliFakeExecutor{
 			outputResults: []cliOutputResult{
 				{output: "sha256:abc\n"},                        // EnsureBaseImage
+				{output: "sha256:def\n"},                        // EnsureAssistantImage
 				{output: "aabb0011\n"},                          // FindByAssistant: one container
 				{output: "", err: errors.New("inspect failed")}, // InspectConfigHash: error
 			},
@@ -410,6 +553,7 @@ func TestRunAssistantWithExecutor(t *testing.T) {
 		exec := &cliFakeExecutor{
 			outputResults: []cliOutputResult{
 				{output: "sha256:abc\n"},   // EnsureBaseImage: image inspect succeeds
+				{output: "sha256:def\n"},   // EnsureAssistantImage: image inspect succeeds
 				{output: "aabb0011\n"},     // FindByAssistant: one container
 				{output: "stale-hash\n"},   // InspectConfigHash: different hash
 				{output: ""},               // FindByLabels (inside Up for recreated): no containers

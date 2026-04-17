@@ -117,7 +117,7 @@ func RunAssistant(ctx context.Context, opts AssistantOptions) TargetResult {
 	}
 
 	hint := newDiskHintWriter(opts.Stderr)
-	if err := assistant.BuildAssistantImage(ctx, opts.Builder, opts.HomeDir, opts.AssistantName, hint); err != nil {
+	if err := assistant.BuildAssistantImage(ctx, opts.Builder, opts.HomeDir, opts.AssistantName, assistant.BuildOptions{NoCache: true}, hint); err != nil {
 		if hint.Tripped() {
 			emitDiskHint(opts.Stderr)
 		}

@@ -12,12 +12,15 @@ import (
 )
 
 // cliFakeExecutor is a minimal canned-response executor for CLI-layer tests.
-// It returns Output results in sequence and records Run calls.
+// It returns Output results in sequence and records Output/Run calls so tests
+// can assert on the exact subprocess arguments that were issued.
 type cliFakeExecutor struct {
 	outputResults []cliOutputResult
 	outputIdx     int
+	outputCalls   [][]string
 	runResults    []error
 	runIdx        int
+	runCalls      [][]string
 }
 
 type cliOutputResult struct {
@@ -25,7 +28,8 @@ type cliOutputResult struct {
 	err    error
 }
 
-func (f *cliFakeExecutor) Output(_ context.Context, _ ...string) (string, error) {
+func (f *cliFakeExecutor) Output(_ context.Context, args ...string) (string, error) {
+	f.outputCalls = append(f.outputCalls, append([]string(nil), args...))
 	if f.outputIdx >= len(f.outputResults) {
 		return "", errors.New("cliFakeExecutor: no more Output results")
 	}
@@ -34,7 +38,8 @@ func (f *cliFakeExecutor) Output(_ context.Context, _ ...string) (string, error)
 	return r.output, r.err
 }
 
-func (f *cliFakeExecutor) Run(_ context.Context, _, _ io.Writer, _ ...string) error {
+func (f *cliFakeExecutor) Run(_ context.Context, _, _ io.Writer, args ...string) error {
+	f.runCalls = append(f.runCalls, append([]string(nil), args...))
 	if f.runIdx >= len(f.runResults) {
 		return errors.New("cliFakeExecutor: no more Run results")
 	}

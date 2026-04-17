@@ -138,6 +138,14 @@ func runAssistantWithExecutor(ctx context.Context, executor container.Executor, 
 		return fmt.Errorf("assistant: base image: %w", err)
 	}
 
+	// Auto-ensure the canonical assistant image (REQ-AS-002 ACs 16-19). This is
+	// a cached build on first use only; cache-busting is exclusively the job of
+	// `confine-ai update <assistant>` (REQ-AS-008 AC 42). The helper emits a
+	// single stderr breadcrumb when it actually builds.
+	if err := assistant.EnsureAssistantImage(ctx, executor, p.homeDir, p.assistantName, stderr); err != nil {
+		return fmt.Errorf("assistant: assistant image: %w", err)
+	}
+
 	// Load assistant config through the standard pipeline.
 	fmt.Fprintf(stderr, "Loading assistant configuration...\n")
 	cfgPath := assistant.ConfigPath(p.homeDir, p.assistantName)
@@ -146,6 +154,19 @@ func runAssistantWithExecutor(ctx context.Context, executor container.Executor, 
 	if err != nil {
 		return fmt.Errorf("assistant: %w", err)
 	}
+
+	// REQ-AS-002 ACs 12-15 (single-owner image model): the shortcut is a pure
+	// consumer of the canonical tag. Override the image explicitly and clear
+	// the build block so container.Up takes the no-build branch — the shortcut
+	// must never invoke buildImage, which would derive a workspace-basename tag
+	// and silently diverge from `confine-ai update`. The override happens after
+	// LoadFromWorkspace because the loader populates these fields from the
+	// assistant's devcontainer.json. This placement is load-bearing: any
+	// build.args / build.context / build.dockerfile edits in the user's
+	// devcontainer.json are thereby ignored on the shortcut path, matching the
+	// fixed-Dockerfile invariant enforced by BuildAssistantImage.
+	cfg.Image = assistant.AssistantImageTag(p.assistantName)
+	cfg.Build = nil
 
 	// Merge git identity into container env after config is loaded (REQ-CL-003).
 	if !p.noGitIdentity && gitName != "" && gitEmail != "" {

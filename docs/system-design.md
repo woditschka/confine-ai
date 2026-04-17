@@ -319,6 +319,40 @@ Builds the base image unconditionally. Writes the provided Dockerfile bytes to a
 
 See `internal/assistant/base.go`.
 
+<a id="ensureassistantimage"></a>
+### EnsureAssistantImage
+
+Checks whether the assistant image (`confine-ai-assistant-<name>:latest`) exists in the local container runtime. If missing, builds it from `~/.confine-ai/assistants/<name>/Dockerfile` with the container runtime's layer cache honored (no `--no-cache`). If present, returns without action. Emits a single stderr breadcrumb on the absent-image path, parallel to `EnsureBaseImage`. Invoked only by the assistant shortcut (REQ-AS-002); `confine-ai update <assistant>` (REQ-AS-008) uses `BuildAssistantImage` directly with `--no-cache`.
+
+**Implements:** REQ-AS-002 (ACs 15-19), REQ-AS-006
+
+See `internal/assistant/assistant_build.go`.
+
+### BuildAssistantImage
+
+Builds the assistant image from the assistant's user-owned Dockerfile at `~/.confine-ai/assistants/<name>/Dockerfile`. Accepts a cache-control option so callers choose between a cached build (shortcut auto-ensure) and a `--no-cache` build (`confine-ai update <assistant>`). Does not pass `--pull` because the `FROM` reference `localhost/confine-ai-base:latest` has no remote source. The helper reads no fields from the assistant's `devcontainer.json` — in particular it never interprets `build.args`, `build.context`, or `build.dockerfile`. This is the fixed-Dockerfile invariant: both writers of `confine-ai-assistant-<name>:latest` produce byte-identical images by construction.
+
+**Implements:** REQ-AS-002 (ACs 18-19), REQ-AS-008 (ACs 42-43)
+
+See `internal/assistant/assistant_build.go`.
+
+<a id="assistant-image-lifecycle"></a>
+### Assistant Image Lifecycle
+
+The assistant image `confine-ai-assistant-<name>:latest` has a single-owner model. `confine-ai update <assistant>` is the sole refresh writer. The assistant shortcut `confine-ai <name>` is the sole consumer. The shortcut's first-use auto-ensure is the only other writer, and it is absence-only.
+
+| Path | Role | Writer? | Cache policy |
+|------|------|---------|--------------|
+| `confine-ai update <assistant>` | Refresh writer | Yes | `--no-cache` (the only cache-bust path) |
+| `confine-ai <name>` (image present) | Consumer | No | N/A |
+| `confine-ai <name>` (image absent, first use) | Auto-ensure writer | Yes (absence-only) | Cached (layer cache honored) |
+
+The shortcut overrides `cfg.Image = assistant.AssistantImageTag(name)` and clears `cfg.Build` before calling `container.Up`, so the generic `buildImage` branch in `internal/container/up.go` is not reached on the assistant path. The generic `buildImage` continues to serve regular devcontainer workspaces with the workspace-basename tag convention; the assistant shortcut bypasses it entirely. `build.args`, `build.context`, and `build.dockerfile` in the assistant's `devcontainer.json` are ignored on both writer paths — both call `BuildAssistantImage`, which builds from the fixed Dockerfile path and passes no build args.
+
+**Implements:** REQ-AS-002 (ACs 12-19), REQ-AS-006, REQ-AS-008 (ACs 40-43)
+
+See [ADR: Assistant Image Tag Single-Owner Model](adr/2026-04-17-assistant-image-tag-single-owner.md).
+
 ### Layout Helpers
 
 `internal/assistant/assistant.go` is the single source of truth for on-disk layout. All production code resolves confine-ai paths through these helpers; no caller constructs `.confine-ai/...` path fragments by hand.
@@ -617,6 +651,7 @@ Before adding a dependency, verify:
 - **Two images** per assistant container: `localhost/confine-ai-base:latest` (toolchain layer, shared) and `confine-ai-assistant-<name>:latest` (assistant layer, one per assistant; `FROM localhost/confine-ai-base:latest`).
 - **Two directory trees** per assistant: `~/.confine-ai/assistants/<name>/` (config, safe to overwrite) and `~/.confine-ai/data/<name>/` (state, never touched by any confine-ai command).
 - **Two file writers**: `confine-ai init` and `confine-ai update base`. `confine-ai update <assistant>` and the assistant shortcut write image layers only, never `~/.confine-ai/` files.
+- **Single-owner assistant image tag.** `confine-ai update <assistant>` is the sole refresh writer of `confine-ai-assistant-<name>:latest` and the only `--no-cache` path. The assistant shortcut is the sole consumer; its first-use auto-ensure is an absence-only cached writer for the same tag. See [Assistant Image Lifecycle](#assistant-image-lifecycle) and [ADR: Assistant Image Tag Single-Owner Model](adr/2026-04-17-assistant-image-tag-single-owner.md).
 - **Three commands**: `init`, `<assistant>` shortcut, `update`. `update` is the only one meant to be run routinely; the others handle install and recreate edge cases.
 
 The update feature is implemented across:

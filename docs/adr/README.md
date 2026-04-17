@@ -13,3 +13,4 @@ The current state of all accepted decisions is reflected in [`system-design.md`]
 | 2026-04-12 | [Managed Dockerfile Classification via Comment Markers](2026-04-12-managed-dockerfile-classification.md) | Accepted |
 | 2026-04-12 | [Outbound HTTP Trust Boundary for `confine-ai update`](2026-04-12-outbound-http-trust-boundary.md) | Accepted |
 | 2026-04-12 | [Folder-Set Container Identity](2026-04-12-folder-set-container-identity.md) | Accepted |
+| 2026-04-17 | [Assistant Image Tag Single-Owner Model](2026-04-17-assistant-image-tag-single-owner.md) | Accepted |
